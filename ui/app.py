@@ -24,6 +24,16 @@ st.markdown(
         color: #ffffff;
         border: 1px solid #1345c4;
     }
+    [data-testid="stExpander"] {
+        background: #eef5ff;
+        border: 1px solid #c9ddff;
+        border-radius: 10px;
+        margin-bottom: 0.35rem;
+    }
+    [data-testid="stExpander"] details summary {
+        background: #e4f0ff;
+        border-radius: 10px;
+    }
     </style>
     """,
     unsafe_allow_html=True,

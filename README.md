@@ -176,11 +176,11 @@ What it shows:
 
 ### 7) Latent-Manifold Module (Optional Non-Classical Add-On)
 What is used:
-- This module is currently a placeholder in v0.1.
-- Planned implementation will use pretrained autoencoder reconstruction error.
+- Patch-level latent-manifold projection using PCA as a lightweight non-classical reconstruction proxy.
+- Image reconstruction from latent coordinates and reconstruction-error heatmap extraction.
 
 What it shows:
-- When implemented, it will estimate how naturally an image lies on a learned latent manifold.
+- Estimates how strongly the image adheres to a low-dimensional latent manifold by measuring reconstruction error.
 - This module is explicitly marked non-classical and is optional.
 
 ## Next Iterations

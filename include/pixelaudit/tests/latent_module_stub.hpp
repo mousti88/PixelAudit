@@ -4,7 +4,7 @@
 
 namespace pixelaudit {
 
-class LatentManifoldStubTest final : public IDetectionTest {
+class LatentManifoldReconstructionTest final : public IDetectionTest {
  public:
   std::string Id() const override;
   std::string Name() const override;

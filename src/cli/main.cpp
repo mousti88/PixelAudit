@@ -142,9 +142,9 @@ int main(int argc, char** argv) {
                                       "vanishing_point_geometry", 1.0));
 
   if (enable_latent) {
-    pipeline.AddTest(std::make_unique<pixelaudit::LatentManifoldStubTest>(),
+    pipeline.AddTest(std::make_unique<pixelaudit::LatentManifoldReconstructionTest>(),
                      GetWeightOrDefault(calibration ? &*calibration : nullptr,
-                                        "latent_manifold_optional", 0.0));
+                                        "latent_manifold_optional", 1.0));
   }
 
   const pixelaudit::FinalReport report =
