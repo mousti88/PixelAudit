@@ -93,6 +93,34 @@ double HistogramPeriodicity(const std::vector<double>& hist, int min_lag,
   return best;
 }
 
+int FirstDigitFromScaledMagnitude(const double value) {
+  int v = static_cast<int>(std::round(std::abs(value) * 1000.0));
+  if (v <= 0) {
+    return 0;
+  }
+  while (v >= 10) {
+    v /= 10;
+  }
+  return v;
+}
+
+double BenfordChiSquare(const std::vector<double>& observed) {
+  if (observed.size() != 9) {
+    return 0.0;
+  }
+  const double s = std::accumulate(observed.begin(), observed.end(), 0.0);
+  if (s <= 1e-12) {
+    return 0.0;
+  }
+  double chi2 = 0.0;
+  for (int d = 1; d <= 9; ++d) {
+    const double p_obs = observed[d - 1] / s;
+    const double p_exp = std::log10(1.0 + 1.0 / static_cast<double>(d));
+    chi2 += ((p_obs - p_exp) * (p_obs - p_exp)) / (p_exp + 1e-12);
+  }
+  return chi2;
+}
+
 }  // namespace
 
 std::string JpegCompressionForensicsTest::Id() const {
@@ -198,6 +226,7 @@ TestResult JpegCompressionForensicsTest::Run(const cv::Mat& bgr_image,
   constexpr int kHistBins = 64;
   constexpr double kMaxCoeff = 0.5;
   std::vector<double> dct_hist(kHistBins, 0.0);
+  std::vector<double> benford_digits(9, 0.0);
 
   double low_energy = 0.0;
   double mid_energy = 0.0;
@@ -241,6 +270,11 @@ TestResult JpegCompressionForensicsTest::Run(const cv::Mat& bgr_image,
               static_cast<int>(std::floor((std::min(av, kMaxCoeff) / kMaxCoeff) *
                                           static_cast<double>(kHistBins - 1))));
           dct_hist[bin] += 1.0;
+
+          const int first_digit = FirstDigitFromScaledMagnitude(av);
+          if (first_digit >= 1 && first_digit <= 9) {
+            benford_digits[first_digit - 1] += 1.0;
+          }
         }
       }
       ++block_count;
@@ -267,12 +301,14 @@ TestResult JpegCompressionForensicsTest::Run(const cv::Mat& bgr_image,
   const double high_zero_ratio =
       static_cast<double>(high_near_zero) / static_cast<double>(high_count);
   const double hist_periodicity = HistogramPeriodicity(dct_hist, 2, 10);
+    const double benford_chi2 = BenfordChiSquare(benford_digits);
 
   const double score = Clamp(
-      100.0 * (0.45 * Clamp((boundary_ratio - 1.0) / 1.0, 0.0, 1.0) +
-               0.25 * Clamp((high_zero_ratio - 0.55) / 0.35, 0.0, 1.0) +
-               0.20 * Clamp(hist_periodicity / 0.45, 0.0, 1.0) +
-               0.10 * Clamp((high_low_ratio - 0.8) / 1.2, 0.0, 1.0)),
+      100.0 * (0.28 * Clamp((boundary_ratio - 1.05) / 0.35, 0.0, 1.0) +
+           0.24 * Clamp((high_zero_ratio - 0.90) / 0.10, 0.0, 1.0) +
+           0.18 * Clamp((0.06 - hist_periodicity) / 0.06, 0.0, 1.0) +
+           0.15 * Clamp((0.65 - high_low_ratio) / 0.45, 0.0, 1.0) +
+           0.15 * Clamp(benford_chi2 / 0.30, 0.0, 1.0)),
       0.0, 100.0);
 
   result.score_percent = score;
@@ -284,7 +320,8 @@ TestResult JpegCompressionForensicsTest::Run(const cv::Mat& bgr_image,
   std::ostringstream summary;
   summary << "Block-boundary ratio=" << boundary_ratio
           << ", high-frequency near-zero ratio=" << high_zero_ratio
-          << ", DCT histogram periodicity=" << hist_periodicity
+      << ", DCT histogram periodicity=" << hist_periodicity
+      << ", Benford chi2=" << benford_chi2
           << ". Strong 8x8 boundary contrast and quantization-like DCT signatures "
              "increase AI-likelihood score.";
   result.evidence_summary = summary.str();
@@ -294,6 +331,7 @@ TestResult JpegCompressionForensicsTest::Run(const cv::Mat& bgr_image,
   result.raw_metrics["block_boundary_ratio"] = boundary_ratio;
   result.raw_metrics["dct_high_zero_ratio"] = high_zero_ratio;
   result.raw_metrics["dct_hist_periodicity"] = hist_periodicity;
+  result.raw_metrics["dct_benford_chi2"] = benford_chi2;
   result.raw_metrics["dct_high_low_ratio"] = high_low_ratio;
   result.raw_metrics["dct_low_energy"] = low_energy;
   result.raw_metrics["dct_mid_energy"] = mid_energy;

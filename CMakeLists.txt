@@ -48,4 +48,16 @@ if(BUILD_TESTING)
   add_executable(pixelaudit_smoke_test tests/smoke_test.cpp)
   target_link_libraries(pixelaudit_smoke_test PRIVATE pixelaudit_core)
   add_test(NAME pixelaudit_smoke_test COMMAND pixelaudit_smoke_test)
+
+  add_executable(pixelaudit_frequency_audit_test tests/frequency_audit_test.cpp)
+  target_link_libraries(pixelaudit_frequency_audit_test PRIVATE pixelaudit_core)
+  add_test(NAME pixelaudit_frequency_audit_test COMMAND pixelaudit_frequency_audit_test)
+
+  add_executable(pixelaudit_vanishing_audit_test tests/vanishing_audit_test.cpp)
+  target_link_libraries(pixelaudit_vanishing_audit_test PRIVATE pixelaudit_core)
+  add_test(NAME pixelaudit_vanishing_audit_test COMMAND pixelaudit_vanishing_audit_test)
+
+  add_executable(pixelaudit_sensor_optical_audit_test tests/sensor_optical_audit_test.cpp)
+  target_link_libraries(pixelaudit_sensor_optical_audit_test PRIVATE pixelaudit_core)
+  add_test(NAME pixelaudit_sensor_optical_audit_test COMMAND pixelaudit_sensor_optical_audit_test)
 endif()

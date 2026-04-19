@@ -104,6 +104,107 @@ cv::Mat BuildRadialProfilePlot(const std::vector<double>& profile,
   return canvas;
 }
 
+struct LinearFit {
+  double slope = 0.0;
+  double intercept = 0.0;
+  double r2 = 0.0;
+  double residual_std = 0.0;
+};
+
+LinearFit FitLogDecay(const std::vector<double>& profile, const int begin,
+                      const int end) {
+  LinearFit fit;
+  if (end - begin < 8) {
+    return fit;
+  }
+
+  std::vector<double> xs;
+  std::vector<double> ys;
+  xs.reserve(end - begin);
+  ys.reserve(end - begin);
+
+  const double denom = std::max(1.0, static_cast<double>(profile.size() - 1));
+  for (int i = begin; i < end; ++i) {
+    const double r = static_cast<double>(i) / denom;
+    const double y = std::log(std::max(1e-12, profile[i]));
+    xs.push_back(std::log(std::max(1e-4, r)));
+    ys.push_back(y);
+  }
+
+  const double n = static_cast<double>(xs.size());
+  const double x_mean = std::accumulate(xs.begin(), xs.end(), 0.0) / n;
+  const double y_mean = std::accumulate(ys.begin(), ys.end(), 0.0) / n;
+
+  double num = 0.0;
+  double den = 0.0;
+  for (std::size_t i = 0; i < xs.size(); ++i) {
+    const double dx = xs[i] - x_mean;
+    num += dx * (ys[i] - y_mean);
+    den += dx * dx;
+  }
+  if (den <= 1e-12) {
+    return fit;
+  }
+
+  fit.slope = num / den;
+  fit.intercept = y_mean - fit.slope * x_mean;
+
+  double ss_res = 0.0;
+  double ss_tot = 0.0;
+  for (std::size_t i = 0; i < xs.size(); ++i) {
+    const double y_hat = fit.intercept + fit.slope * xs[i];
+    const double res = ys[i] - y_hat;
+    ss_res += res * res;
+    const double dy = ys[i] - y_mean;
+    ss_tot += dy * dy;
+  }
+  fit.r2 = ss_tot > 1e-12 ? Clamp(1.0 - ss_res / ss_tot, 0.0, 1.0) : 0.0;
+  fit.residual_std = std::sqrt(ss_res / std::max(1.0, n - 2.0));
+
+  return fit;
+}
+
+double MonotonicViolation(const std::vector<double>& profile, const int begin,
+                          const int end) {
+  if (end - begin < 4) {
+    return 0.0;
+  }
+  double pos = 0.0;
+  double all = 0.0;
+  for (int i = begin + 1; i < end; ++i) {
+    const double d = profile[i] - profile[i - 1];
+    if (d > 0.0) {
+      pos += d;
+    }
+    all += std::abs(d);
+  }
+  return all > 1e-12 ? pos / all : 0.0;
+}
+
+double PeakinessScore(const std::vector<double>& profile, const int begin,
+                      const int end) {
+  if (end - begin < 10) {
+    return 0.0;
+  }
+  constexpr int kWindow = 4;
+  double peak = 0.0;
+  for (int i = begin + kWindow; i < end - kWindow; ++i) {
+    double local_sum = 0.0;
+    int local_n = 0;
+    for (int k = -kWindow; k <= kWindow; ++k) {
+      if (k == 0) {
+        continue;
+      }
+      local_sum += profile[i + k];
+      ++local_n;
+    }
+    const double local_mean = local_sum / std::max(1, local_n);
+    const double excess = (profile[i] - local_mean) / (local_mean + 1e-9);
+    peak = std::max(peak, excess);
+  }
+  return std::max(0.0, peak);
+}
+
 }  // namespace
 
 std::string FrequencySpectrumTest::Id() const { return "frequency_spectrum"; }
@@ -247,18 +348,6 @@ TestResult FrequencySpectrumTest::Run(const cv::Mat& bgr_image,
   const double high_ratio = high_energy / (total_energy + 1e-9);
   const double low_ratio = low_energy / (total_energy + 1e-9);
 
-  // Ringing proxy: measure oscillation in upper-mid to high radial bands.
-  double ringing_acc = 0.0;
-  int ringing_n = 0;
-  for (int i = mid_idx + 2; i < bins - 2; ++i) {
-    const double d2 = std::abs(smooth_profile[i + 1] - 2.0 * smooth_profile[i] +
-                               smooth_profile[i - 1]);
-    ringing_acc += d2;
-    ++ringing_n;
-  }
-  const double ringing_strength =
-      ringing_n > 0 ? ringing_acc / static_cast<double>(ringing_n) : 0.0;
-
   // Directional anisotropy in Fourier domain.
   const int wedge_bins = 36;
   std::vector<double> angle_energy(wedge_bins, 0.0);
@@ -280,17 +369,29 @@ TestResult FrequencySpectrumTest::Run(const cv::Mat& bgr_image,
       angle_energy[ab] += row[x];
     }
   }
-  const auto [amin_it, amax_it] = std::minmax_element(angle_energy.begin(), angle_energy.end());
-  const double anisotropy =
-      (*amax_it - *amin_it) / (std::accumulate(angle_energy.begin(), angle_energy.end(), 0.0) /
-                                   static_cast<double>(wedge_bins) +
-                               1e-9);
+    const auto [amin_it, amax_it] =
+      std::minmax_element(angle_energy.begin(), angle_energy.end());
+    const double anisotropy =
+      (*amax_it - *amin_it) /
+      (std::accumulate(angle_energy.begin(), angle_energy.end(), 0.0) /
+         static_cast<double>(wedge_bins) +
+       1e-9);
 
-  const double score = Clamp(
-      100.0 * (0.50 * Clamp(high_ratio / 0.40, 0.0, 1.0) +
-               0.30 * Clamp(ringing_strength / 0.020, 0.0, 1.0) +
-               0.20 * Clamp(anisotropy / 1.6, 0.0, 1.0)),
-      0.0, 100.0);
+    const int fit_begin = std::max(4, static_cast<int>(0.10 * bins));
+    const int fit_end = std::max(fit_begin + 8, static_cast<int>(0.92 * bins));
+    const int high_begin = std::max(mid_idx, static_cast<int>(0.55 * bins));
+    const LinearFit decay_fit = FitLogDecay(smooth_profile, fit_begin, fit_end);
+    const double monotonic_violation =
+      MonotonicViolation(smooth_profile, fit_begin, fit_end);
+    const double peakiness = PeakinessScore(smooth_profile, high_begin, bins - 2);
+
+    const double non_natural_score =
+      0.35 * Clamp((1.0 - decay_fit.r2) / 0.45, 0.0, 1.0) +
+      0.25 * Clamp(decay_fit.residual_std / 0.28, 0.0, 1.0) +
+      0.20 * Clamp(monotonic_violation / 0.40, 0.0, 1.0) +
+      0.10 * Clamp(peakiness / 0.90, 0.0, 1.0) +
+      0.10 * Clamp(anisotropy / 1.6, 0.0, 1.0);
+    const double score = Clamp(100.0 * non_natural_score, 0.0, 100.0);
 
   result.score_percent = score;
   result.confidence = Clamp(std::abs(score - 50.0) / 50.0, 0.0, 1.0);
@@ -299,16 +400,21 @@ TestResult FrequencySpectrumTest::Run(const cv::Mat& bgr_image,
                                                  : TestStatus::kInconclusive);
 
   std::ostringstream summary;
-  summary << "Frequency evidence from log-spectrum: high-frequency ratio=" << high_ratio
-          << ", ringing proxy=" << ringing_strength << ", anisotropy=" << anisotropy
-          << ". Elevated high-frequency concentration and oscillation increase "
-             "AI-likelihood score.";
+    summary << "Frequency evidence from log-spectrum: decay-fit R^2=" << decay_fit.r2
+      << ", residual std=" << decay_fit.residual_std
+      << ", monotonic violation=" << monotonic_violation
+      << ", peakiness=" << peakiness << ". Larger deviations from smooth "
+      << "natural-image spectral decay increase AI-likelihood score.";
   result.evidence_summary = summary.str();
 
   result.raw_metrics["low_band_ratio"] = low_ratio;
   result.raw_metrics["mid_band_ratio"] = mid_energy / (total_energy + 1e-9);
   result.raw_metrics["high_band_ratio"] = high_ratio;
-  result.raw_metrics["ringing_strength"] = ringing_strength;
+    result.raw_metrics["decay_fit_r2"] = decay_fit.r2;
+    result.raw_metrics["decay_fit_slope"] = decay_fit.slope;
+    result.raw_metrics["decay_fit_residual_std"] = decay_fit.residual_std;
+    result.raw_metrics["radial_monotonic_violation"] = monotonic_violation;
+    result.raw_metrics["radial_peakiness"] = peakiness;
   result.raw_metrics["directional_anisotropy"] = anisotropy;
   result.raw_metrics["profile_bins"] = static_cast<double>(bins);
 

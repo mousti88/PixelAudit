@@ -232,10 +232,11 @@ TestResult SensorNoisePrnuCfaTest::Run(const cv::Mat& bgr_image,
   }
   const double cfa_entropy_norm = phase_entropy / 2.0;
 
-  const double score = Clamp(
-      100.0 * (0.35 * Clamp(mean_abs_corr / 0.40, 0.0, 1.0) +
-               0.35 * Clamp(stationarity_cv / 0.85, 0.0, 1.0) +
-               0.30 * Clamp((0.33 - cfa_phase_dominance) / 0.33, 0.0, 1.0)),
+    const double score = Clamp(
+      100.0 * (0.50 * Clamp(stationarity_cv / 1.10, 0.0, 1.0) +
+           0.30 * Clamp((0.985 - mean_abs_corr) / 0.085, 0.0, 1.0) +
+           0.15 * Clamp((0.030 - res_mean[0]) / 0.020, 0.0, 1.0) +
+           0.05 * Clamp((0.254 - cfa_phase_dominance) / 0.012, 0.0, 1.0)),
       0.0, 100.0);
 
   result.score_percent = score;
@@ -247,8 +248,8 @@ TestResult SensorNoisePrnuCfaTest::Run(const cv::Mat& bgr_image,
   std::ostringstream summary;
   summary << "Residual correlation=" << mean_abs_corr
           << ", stationarity CV=" << stationarity_cv
-          << ", CFA phase dominance=" << cfa_phase_dominance
-          << ". Lower camera-like CFA periodicity and unstable residual noise increase "
+      << ", residual mean=" << res_mean[0]
+      << ". Weaker camera-like channel coupling and unstable residual noise increase "
              "AI-likelihood score.";
   result.evidence_summary = summary.str();
 

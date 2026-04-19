@@ -167,6 +167,11 @@ TestResult LuminanceGradientPcaTest::Run(const cv::Mat& bgr_image,
   cv::Mat angle;
   cv::cartToPolar(gx, gy, magnitude, angle, false);
 
+  cv::Mat low_grad_mask;
+  cv::compare(magnitude, 0.03, low_grad_mask, cv::CMP_LT);
+  const double near_zero_ratio = static_cast<double>(cv::countNonZero(low_grad_mask)) /
+                                 static_cast<double>(magnitude.total());
+
   const double orientation_entropy = ComputeEntropy(angle, magnitude, 36);
   cv::Scalar mag_mean;
   cv::Scalar mag_std;
@@ -245,11 +250,12 @@ TestResult LuminanceGradientPcaTest::Run(const cv::Mat& bgr_image,
   const double lambda1 = eigenvals.rows > 1 ? eigenvals.at<double>(1, 0) : 1e-6;
   const double pca_ratio = lambda0 / (lambda1 + 1e-6);
 
-  const double instability =
-      0.45 * orientation_entropy +
-      0.25 * Clamp(lap_std[0] / 0.2, 0.0, 1.0) +
-      0.20 * Clamp(pc1_std[0] / 0.4, 0.0, 1.0) +
-      0.10 * Clamp((3.0 - pca_ratio) / 3.0, 0.0, 1.0);
+    const double instability =
+      0.15 * Clamp(orientation_entropy / 0.85, 0.0, 1.0) +
+      0.35 * Clamp(pc1_std[0] / 0.95, 0.0, 1.0) +
+      0.30 * Clamp(std::log1p(pca_ratio) / std::log1p(22.0), 0.0, 1.0) +
+      0.15 * Clamp((0.25 - mag_mean[0]) / 0.22, 0.0, 1.0) +
+      0.05 * Clamp((near_zero_ratio - 0.45) / 0.40, 0.0, 1.0);
 
   const double score = Clamp(instability * 100.0, 0.0, 100.0);
 
@@ -261,14 +267,17 @@ TestResult LuminanceGradientPcaTest::Run(const cv::Mat& bgr_image,
 
   std::ostringstream summary;
   summary << "Gradient orientation entropy=" << orientation_entropy
-          << ", Laplacian std=" << lap_std[0]
+      << ", gradient mean=" << mag_mean[0]
           << ", patch-PC1 std=" << pc1_std[0]
-          << ". Higher instability patterns increase AI-likelihood score.";
+      << ", PCA ratio=" << pca_ratio
+      << ". Higher patch-manifold deviation and overly smooth gradients increase "
+         "AI-likelihood score.";
   result.evidence_summary = summary.str();
 
   result.raw_metrics["orientation_entropy_norm"] = orientation_entropy;
   result.raw_metrics["gradient_mean"] = mag_mean[0];
   result.raw_metrics["gradient_std"] = mag_std[0];
+  result.raw_metrics["near_zero_gradient_ratio"] = near_zero_ratio;
   result.raw_metrics["laplacian_std"] = lap_std[0];
   result.raw_metrics["pc1_std"] = pc1_std[0];
   result.raw_metrics["pca_lambda_ratio"] = pca_ratio;

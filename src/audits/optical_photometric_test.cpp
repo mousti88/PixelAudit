@@ -211,17 +211,17 @@ TestResult OpticalPhotometricPlausibilityTest::Run(const cv::Mat& bgr_image,
   }
   const double shift_std = std::sqrt(shift_var);
 
-  const double chroma_inconsistency =
-      0.55 * Clamp(shift_std / 1.4, 0.0, 1.0) +
-      0.30 * Clamp((global_shift_rg + global_shift_bg) / 3.0, 0.0, 1.0) +
-      0.15 * Clamp((2.0 - (resp_rg + resp_bg)) / 2.0, 0.0, 1.0);
+    const double chroma_inconsistency =
+      0.60 * Clamp(shift_std / 0.60, 0.0, 1.0) +
+      0.30 * Clamp(shift_mean / 0.26, 0.0, 1.0) +
+      0.10 * Clamp((1.98 - (resp_rg + resp_bg)) / 0.22, 0.0, 1.0);
 
-  const double photometric_inconsistency =
-      0.70 * Clamp(illum_entropy / 0.90, 0.0, 1.0) +
-      0.30 * Clamp(shift_mean / 1.0, 0.0, 1.0);
+    const double photometric_inconsistency =
+      0.35 * Clamp((illum_entropy - 0.64) / 0.12, 0.0, 1.0) +
+      0.65 * Clamp(shift_mean / 0.26, 0.0, 1.0);
 
-  const double score = Clamp(
-      100.0 * (0.55 * photometric_inconsistency + 0.45 * chroma_inconsistency),
+    const double score = Clamp(
+      100.0 * (0.75 * chroma_inconsistency + 0.25 * photometric_inconsistency),
       0.0, 100.0);
 
   result.score_percent = score;
@@ -233,10 +233,10 @@ TestResult OpticalPhotometricPlausibilityTest::Run(const cv::Mat& bgr_image,
   std::ostringstream summary;
   summary << "Illumination entropy=" << illum_entropy
           << ", edge-shift std=" << shift_std
-          << ", global RG/BG shifts=" << global_shift_rg << "/"
-          << global_shift_bg
-          << ". Higher directional incoherence and unstable chromatic edge shifts "
-             "increase AI-likelihood score.";
+         << ", edge-shift mean=" << shift_mean << ", phase responses=" << resp_rg
+         << "/" << resp_bg
+         << ". Higher local chromatic edge-shift instability increases AI-likelihood "
+           "score.";
   result.evidence_summary = summary.str();
 
   result.raw_metrics["illumination_entropy_norm"] = illum_entropy;
